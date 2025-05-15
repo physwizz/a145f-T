@@ -225,7 +225,7 @@
 	};
 };
 
-/* /home/dpi/qb5_8814/workspace/P4_1716/android/kernel/kmodule/battery/suwon/fuelgauge/s2mu106/s2mu106_fuelgauge.a14.dtsi */
+/* /home/dpi/qb5_8816/workspace/P4_1716/android/kernel/kmodule/battery/suwon/fuelgauge/s2mu106/a14/s2mu106_fuelgauge.dtsi */
 
 &s2mu106_fuelgauge {
 	fuelgauge,capacity_full = <2000>;
@@ -269,7 +269,7 @@
 
 		/* battery,soc_arr_val */
 		10511 10000 9489 8978 8467 7956 7445 6933 6422 5911
-		5400 4889 4378 3867 3356 2845 2333 1822 1312 801 
+		5400 4889 4378 3867 3356 2845 2333 1822 1312 801
 		290 (-159)
 
 		/* battery,ocv_arr_val */

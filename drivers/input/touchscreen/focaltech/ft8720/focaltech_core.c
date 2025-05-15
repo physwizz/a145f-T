@@ -1145,20 +1145,49 @@ static void fts_wakeup_source_unregister(struct fts_ts_data *ts_data)
 }
 #endif
 
+static void fts_handler_wait_resume_work(struct work_struct *work)
+{
+	struct fts_ts_data *ts_data = fts_data;
+	struct fts_ts_platform_data *pdata = ts_data->pdata;
+	int irq = gpio_to_irq(pdata->irq_gpio);
+	struct irq_desc *desc = irq_to_desc(irq);
+	int ret;
+
+	ret = wait_for_completion_interruptible_timeout(&ts_data->pm_completion,
+			msecs_to_jiffies(FTS_TIMEOUT_COMERR_PM));
+	if (ret == 0) {
+		FTS_ERROR("%s: LPM: pm resume is not handled\n", __func__);
+		goto out;
+	}
+	if (ret < 0) {
+		FTS_ERROR("%s: LPM: -ERESTARTSYS if interrupted, %d\n", __func__, ret);
+		goto out;
+	}
+
+	if (desc && desc->action && desc->action->thread_fn) {
+		FTS_INFO("%s: run irq thread\n", __func__);
+		desc->action->thread_fn(irq, desc->action->dev_id);
+	}
+out:
+	enable_irq(irq);
+}
+
 static irqreturn_t fts_irq_handler(int irq, void *data)
 {
 #if defined(CONFIG_PM) && FTS_PATCH_COMERR_PM
-	int ret = 0;
 	struct fts_ts_data *ts_data = fts_data;
 
 //	if ((ts_data->suspended) && (ts_data->pm_suspend)) {
 	if (ts_data->power_status == LP_MODE_STATUS) {
 		__pm_wakeup_event(ts_data->wake_lock, FTS_WAKELOCK_TIME);
-		ret = wait_for_completion_timeout(
-				&ts_data->pm_completion,
-				msecs_to_jiffies(FTS_TIMEOUT_COMERR_PM));
-		if (!ret) {
-			FTS_ERROR("Bus don't resume from pm(deep),timeout,skip irq");
+		if (!ts_data->pm_completion.done) {
+			if (!IS_ERR_OR_NULL(ts_data->irq_workqueue)) {
+				FTS_INFO("%s: disable irq and queue waiting work\n", __func__);
+				disable_irq_nosync(ts_data->irq);
+				queue_work(fts_data->irq_workqueue, &fts_data->irq_work);
+				return IRQ_HANDLED;
+			}
+			FTS_ERROR("%s: irq_workqueue not exist\n", __func__);
 			return IRQ_HANDLED;
 		}
 	}
@@ -1181,6 +1210,14 @@ static int fts_irq_registration(struct fts_ts_data *ts_data)
 	int ret = 0;
 	struct fts_ts_platform_data *pdata = ts_data->pdata;
 
+	ts_data->irq_workqueue = create_singlethread_workqueue("fts_irq_wq");
+	if (!IS_ERR_OR_NULL(ts_data->irq_workqueue)) {
+		INIT_WORK(&ts_data->irq_work, fts_handler_wait_resume_work);
+		FTS_INFO("%s: set fts_handler_wait_resume_work\n", __func__);
+	} else {
+		FTS_ERROR("%s: failed to create irq_workqueue, err: %ld\n",
+				__func__, PTR_ERR(ts_data->irq_workqueue));
+	}
 	ts_data->irq = gpio_to_irq(pdata->irq_gpio);
 	pdata->irq_gpio_flags = IRQF_TRIGGER_FALLING | IRQF_ONESHOT;
 	FTS_INFO("irq:%d, flag:%x", ts_data->irq, pdata->irq_gpio_flags);
@@ -2333,17 +2370,17 @@ int fts_vbus_notification(struct notifier_block *nb,
 	switch (vbus_type) {
 	case STATUS_VBUS_HIGH:
 		FTS_INFO("attach");
-		ts_data->ta_stsatus = true;
+		ts_data->ta_status = true;
 		break;
 	case STATUS_VBUS_LOW:
 		FTS_INFO("detach");
-		ts_data->ta_stsatus = false;
+		ts_data->ta_status = false;
 		break;
 	default:
 		break;
 	}
 
-	fts_charger_attached(ts_data, ts_data->ta_stsatus);
+	fts_charger_attached(ts_data, ts_data->ta_status);
 	return 0;
 }
 #endif

@@ -713,7 +713,7 @@ int ili_fw_upgrade_handler(void *data)
 		ilits->fw_update_stat = FW_UPDATE_PASS;
 	}
 
-	if (!ilits->boot) {
+	if ((!ilits->boot) && (ilits->fw_update_stat == FW_UPDATE_PASS)) {
 		ilits->boot = true;
 		input_info(true, ilits->dev, "%s Registre touch to input subsystem\n", __func__);
 		ili_input_register();
@@ -862,6 +862,31 @@ int ili_set_tp_data_len(int format, bool send, u8 *data)
 	return ret;
 }
 
+void ili_handler_wait_resume_work(struct work_struct *work)
+{
+	struct irq_desc *desc = irq_to_desc(ilits->irq_num);
+	int ret;
+
+	ret = wait_for_completion_interruptible_timeout(&ilits->pm_completion,
+			msecs_to_jiffies(700));
+	if (ret == 0) {
+		input_err(true, ilits->dev, "%s: LPM: pm resume is not handled\n", __func__);
+		goto out;
+	}
+	if (ret < 0) {
+		input_err(true, ilits->dev, "%s: LPM: -ERESTARTSYS if interrupted, %d\n", __func__, ret);
+		goto out;
+	}
+
+	if (desc && desc->action && desc->action->thread_fn) {
+		input_info(true, ilits->dev, "%s: run irq thread\n", __func__);
+		desc->action->thread_fn(ilits->irq_num, desc->action->dev_id);
+	}
+out:
+	enable_irq(ilits->irq_num);
+}
+
+
 int ili_report_handler(void)
 {
 	int ret = 0, pid = 0;
@@ -888,14 +913,19 @@ int ili_report_handler(void)
 	ili_wq_ctrl(WQ_BAT, DISABLE);
 
 	if (ilits->actual_tp_mode == P5_X_FW_GESTURE_MODE) {
-		__pm_stay_awake(ilits->ws);
+		__pm_wakeup_event(ilits->ws, 700);
 
 		if (ilits->pm_suspend) {
-			/* Waiting for pm resume completed */
-			ret = wait_for_completion_timeout(&ilits->pm_completion, msecs_to_jiffies(700));
-			if (!ret) {
-				input_err(true, ilits->dev, "%ssystem(spi) can't finished resuming procedure.",
-						__func__);
+			if (!ilits->pm_completion.done) {
+				if (!IS_ERR_OR_NULL(ilits->irq_workqueue)) {
+					input_info(true, ilits->dev, "%s: disable_irq and run waiting thread\n", __func__);
+					disable_irq_nosync(ilits->irq_num);
+					queue_work(ilits->irq_workqueue, &ilits->irq_work);
+					return SEC_ERROR;
+				} else {
+					input_err(true, ilits->dev, "%s: irq_workqueue not exist\n", __func__);
+					return SEC_ERROR;
+				}
 			}
 		}
 	}
@@ -1022,8 +1052,6 @@ out:
 		ili_wq_ctrl(WQ_BAT, ENABLE);
 	}
 
-	if (ilits->actual_tp_mode == P5_X_FW_GESTURE_MODE)
-		__pm_relax(ilits->ws);
 	return ret;
 }
 
@@ -1076,6 +1104,13 @@ int ili_reset_ctrl(int mode)
 
 static void ili_read_info_work(struct work_struct *work)
 {
+	if (atomic_read(&ilits->fw_stat) != END) {
+		input_err(true, ilits->dev, "%s: fw update didn't finish yet.\n", __func__);
+		return;
+	} else {
+		input_info(true, ilits->dev, "%s: fw update finished.\n", __func__);
+	}
+
 #if IS_ENABLED(CONFIG_SEC_FACTORY)
 	input_err(true, ilits->dev, "%s: factory bin : skip ili_read_info_onboot call\n", __func__);
 #else

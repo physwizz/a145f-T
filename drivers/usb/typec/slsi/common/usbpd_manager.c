@@ -2137,7 +2137,9 @@ static int usbpd_manager_get_property(struct power_supply *psy,
 		enum power_supply_property psp,
 		union power_supply_propval *val)
 {
+#if IS_ENABLED(CONFIG_S2MU106_TYPEC_WATER)
 	struct usbpd_data *pd_data = power_supply_get_drvdata(psy);
+#endif
 	enum power_supply_lsi_property lsi_psp = (enum power_supply_lsi_property)psp;
 
 	switch ((int)psp) {
@@ -2149,9 +2151,6 @@ static int usbpd_manager_get_property(struct power_supply *psy,
 #if IS_ENABLED(CONFIG_S2MU106_TYPEC_WATER)
 			(*val).intval = PDIC_OPS_FUNC(water_get_power_role, pd_data);
 #endif
-			break;
-		case POWER_SUPPLY_LSI_PROP_GET_CC_STATE:
-			(*val).intval = PDIC_OPS_FUNC(ops_get_fsm_state, pd_data);
 			break;
 		case POWER_SUPPLY_LSI_PROP_WATER_CHECK:
 #if IS_ENABLED(CONFIG_S2MU106_TYPEC_WATER)

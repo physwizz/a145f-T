@@ -614,7 +614,7 @@ typedef struct usbpd_phy_ops {
 	int    (*pps_enable)(void *, int);
 	int    (*get_pps_enable)(void *, int *);
 #endif
-#if IS_ENABLED(CONFIG_S2MU106_TYPEC_WATER)
+#if IS_ENABLED(CONFIG_S2MU106_TYPEC_WATER) || IS_ENABLED(CONFIG_S2MF301_TYPEC_WATER)
 	int		(*water_get_power_role)(void *);
 	int		(*ops_water_check)(void *);
 	int		(*ops_dry_check)(void *);

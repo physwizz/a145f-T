@@ -308,7 +308,7 @@ struct fts_ts_data {
 	int pFrame_size;
 #if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
 	struct notifier_block vbus_nb;
-	bool ta_stsatus;
+	bool ta_status;
 #endif
 	bool set_test_fw;
 
@@ -323,6 +323,8 @@ struct fts_ts_data {
 	struct completion secure_interrupt;
 	struct mutex secure_lock;
 #endif
+	struct work_struct irq_work;
+	struct workqueue_struct *irq_workqueue;
 };
 
 enum _FTS_BUS_TYPE {

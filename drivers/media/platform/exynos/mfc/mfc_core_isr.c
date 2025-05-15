@@ -2047,6 +2047,7 @@ static int __mfc_irq_ctx(struct mfc_core *core, struct mfc_ctx *ctx,
 		mfc_err("Unknown int reason: %d(%#x)\n", reason, reason);
 		if (core->dev->debugfs.sfr_dump & MFC_DUMP_UNKNOWN_INT)
 			call_dop(core, dump_and_stop_debug_mode, core);
+		mfc_core_handle_error(core);
 	}
 
 	return 1;
